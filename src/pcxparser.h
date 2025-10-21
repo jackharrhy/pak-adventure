@@ -38,15 +38,7 @@ struct PCXHeader {
 };
 #pragma pack(pop)
 
-struct PCXImage {
-    int width;
-    int height;
-    GLuint textureID;
-    std::string filename;
-};
-
-
 class PCXParser {
 public:
-    static auto loadPCX(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<PCXImage>;
+    static auto loadPCX(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<Texture>;
 };

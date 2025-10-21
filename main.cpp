@@ -20,8 +20,11 @@
 #include <unordered_map>
 #include <limits>
 #include <misc/cpp/imgui_stdlib.h>
+
 #include "types.h"
+#include "pakparser.h"
 #include "pcxparser.h"
+#include "walparser.h"
 
 struct FileTreeNode
 {
@@ -61,213 +64,6 @@ namespace ParserRegistry
         if (extension == ".pk3" || extension == ".pk4")
             return PakFormat::PKZIP;
         return PakFormat::UNKNOWN;
-    }
-}
-
-namespace PakParser
-{
-    struct PakHeader
-    {
-        std::string signature;
-        uint32_t dirOffset;
-        uint32_t dirLength;
-    };
-
-    auto readHeader(std::ifstream &file) -> std::optional<PakHeader>
-    {
-        char signature[4];
-        uint32_t dirOffset, dirLength;
-
-        file.read(signature, 4);
-        file.read(reinterpret_cast<char *>(&dirOffset), 4);
-        file.read(reinterpret_cast<char *>(&dirLength), 4);
-
-        if (!file || std::string(signature, 4) != "PACK")
-        {
-            return std::nullopt;
-        }
-        return PakHeader{std::string(signature, 4), dirOffset, dirLength};
-    }
-
-    auto readEntry(std::ifstream &file) -> PakFileEntry
-    {
-        char name[56];
-        uint32_t offset, size;
-        file.read(name, 56);
-        file.read(reinterpret_cast<char *>(&offset), 4);
-        file.read(reinterpret_cast<char *>(&size), 4);
-        return {std::string(name), offset, size};
-    }
-
-    auto loadArchive(const std::string &path) -> std::optional<std::vector<PakFileEntry>>
-    {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            return std::nullopt;
-
-        auto header = readHeader(file);
-        if (!header)
-            return std::nullopt;
-
-        file.seekg(header->dirOffset);
-        std::vector<PakFileEntry> entries(header->dirLength / 64);
-
-        for (auto &entry : entries)
-        {
-            entry = readEntry(file);
-            entry.format = PakFormat::PAK;
-        }
-
-        return entries;
-    }
-
-    auto readData(const std::string &path, const PakFileEntry &entry) -> std::vector<uint8_t>
-    {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            return {};
-
-        file.seekg(entry.offset);
-        std::vector<uint8_t> data(entry.size);
-        file.read(reinterpret_cast<char *>(data.data()), entry.size);
-
-        return data;
-    }
-}
-
-namespace WALParser
-{
-    struct WALHeader
-    {
-        char name[32];
-        uint32_t width;
-        uint32_t height;
-        uint32_t offset[4]; // mipmap offsets
-        char animname[32];
-        uint32_t flags;
-        uint32_t contents;
-        uint32_t value;
-    };
-
-    static std::optional<std::vector<uint8_t>> globalPalette;
-
-    auto loadGlobalPalette(const std::string &pakPath, const std::vector<PakFileEntry> &entries) -> bool
-    {
-        // Find the colormap.pcx entry
-        auto it = std::find_if(entries.begin(), entries.end(),
-                               [](const PakFileEntry &e)
-                               { return e.filename == "pics/colormap.pcx"; });
-
-        if (it == entries.end())
-        {
-            return false;
-        }
-
-        // Load the PCX file
-        std::ifstream file(pakPath, std::ios::binary);
-        if (!file.is_open())
-        {
-            return false;
-        }
-
-        file.seekg(it->offset);
-        auto pcxImage = PCXParser::loadPCX(pakPath, *it);
-        if (!pcxImage)
-        {
-            return false;
-        }
-
-        // Read back the texture data to get the palette
-        std::vector<uint8_t> pixels(pcxImage->width * pcxImage->height * 4);
-        glBindTexture(GL_TEXTURE_2D, pcxImage->textureID);
-        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-
-        // Convert RGBA to RGB palette
-        globalPalette = std::vector<uint8_t>(256 * 3);
-        for (int i = 0; i < 256; i++)
-        {
-            globalPalette->at(i * 3 + 0) = pixels[i * 4 + 0];
-            globalPalette->at(i * 3 + 1) = pixels[i * 4 + 1];
-            globalPalette->at(i * 3 + 2) = pixels[i * 4 + 2];
-        }
-
-        // Clean up the temporary texture
-        glDeleteTextures(1, &pcxImage->textureID);
-        return true;
-    }
-
-    auto readHeader(std::ifstream &file) -> std::optional<WALHeader>
-    {
-        WALHeader header;
-        file.read(header.name, 32);
-        file.read(reinterpret_cast<char *>(&header.width), 4);
-        file.read(reinterpret_cast<char *>(&header.height), 4);
-        file.read(reinterpret_cast<char *>(&header.offset), 16); // 4 mipmap offsets
-        file.read(header.animname, 32);
-        file.read(reinterpret_cast<char *>(&header.flags), 4);
-        file.read(reinterpret_cast<char *>(&header.contents), 4);
-        file.read(reinterpret_cast<char *>(&header.value), 4);
-
-        return file ? std::optional(header) : std::nullopt;
-    }
-
-    auto loadWAL(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<PCXImage>
-    {
-        // Load the global palette if we haven't already
-        if (!globalPalette)
-        {
-            // We need to find all entries to locate the colormap
-            auto entries = PakParser::loadArchive(pakPath);
-            if (!entries || !loadGlobalPalette(pakPath, *entries))
-            {
-                return std::nullopt;
-            }
-        }
-
-        std::ifstream file(pakPath, std::ios::binary);
-        if (!file.is_open())
-            return std::nullopt;
-
-        file.seekg(entry.offset);
-        auto header = readHeader(file);
-        if (!header)
-            return std::nullopt;
-
-        // Read the main image data
-        std::vector<uint8_t> data(header->width * header->height);
-        file.seekg(entry.offset + header->offset[0]); // First mipmap level
-        file.read(reinterpret_cast<char *>(data.data()), data.size());
-
-        // Convert indexed color to RGBA using global palette
-        std::vector<uint8_t> rgba(header->width * header->height * 4);
-        for (int i = 0; i < header->width * header->height; i++)
-        {
-            uint8_t colorIndex = data[i];
-            // Handle transparent pixels (index 255 is transparent)
-            if (colorIndex == 255)
-            {
-                rgba[i * 4 + 0] = 0; // R
-                rgba[i * 4 + 1] = 0; // G
-                rgba[i * 4 + 2] = 0; // B
-                rgba[i * 4 + 3] = 0; // A (transparent)
-            }
-            else
-            {
-                rgba[i * 4 + 0] = globalPalette->at(colorIndex * 3 + 0); // R
-                rgba[i * 4 + 1] = globalPalette->at(colorIndex * 3 + 1); // G
-                rgba[i * 4 + 2] = globalPalette->at(colorIndex * 3 + 2); // B
-                rgba[i * 4 + 3] = 255;                                   // A (opaque)
-            }
-        }
-
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, header->width, header->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        return PCXImage{static_cast<int>(header->width), static_cast<int>(header->height), textureID, ""};
     }
 }
 
@@ -357,7 +153,7 @@ namespace BinaryFileParser
 
 namespace STBImageParser
 {
-    auto loadSTBImage(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<PCXImage>
+    auto loadSTBImage(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<Texture>
     {
         auto readDataFunc = ParserRegistry::handlers[entry.format].readData;
         auto data = readDataFunc(pakPath, entry);
@@ -378,7 +174,7 @@ namespace STBImageParser
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
         stbi_image_free(imageData);
-        return PCXImage{width, height, textureID, ""};
+        return Texture{width, height, textureID, ""};
     }
 }
 
@@ -392,8 +188,8 @@ namespace ParserRegistry
 struct PakViewerState
 {
     std::vector<PakFileEntry> entries;
-    std::vector<PCXImage> loadedImages;
-    std::optional<PCXImage> currentImage;
+    std::vector<Texture> loadedImages;
+    std::optional<Texture> currentImage;
     std::optional<TextFile> currentText;
     std::optional<BinaryFile> currentBinary;
     std::string pakPath;
@@ -452,7 +248,7 @@ void buildFileTree(const std::vector<PakFileEntry> &entries, FileTreeNode &root)
     }
 }
 
-void collectSupportedImages(const FileTreeNode &node, const std::string &pakPath, std::vector<PCXImage> &images)
+void collectSupportedImages(const FileTreeNode &node, const std::string &pakPath, std::vector<Texture> &images)
 {
     if (node.entry)
     {
@@ -556,7 +352,7 @@ std::vector<const FileTreeNode *> getFilteredFiles(const FileTreeNode &node, con
     return results;
 }
 
-void loadFilteredImages(const std::vector<const FileTreeNode *> &filteredNodes, const std::string &pakPath, std::vector<PCXImage> &images)
+void loadFilteredImages(const std::vector<const FileTreeNode *> &filteredNodes, const std::string &pakPath, std::vector<Texture> &images)
 {
     for (const FileTreeNode *node : filteredNodes)
     {

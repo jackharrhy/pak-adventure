@@ -18,3 +18,10 @@ struct PakFileEntry {
     PakFormat format;
     zip_file_t *zipFile;
 };
+
+struct Texture {
+    int width;
+    int height;
+    GLuint textureID;
+    std::string filename;
+};

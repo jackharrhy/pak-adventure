@@ -1,10 +1,13 @@
-#include "pcxparser.h"
 
 #include <vector>
 #include <fstream>
 #include <optional>
 #include <algorithm>
 #include <cstdint>
+
+#include <GLFW/glfw3.h>
+
+#include "pcxparser.h"
 
 constexpr uint8_t  PCX_MAGIC_NUMBER        = 0x0A;  // The first byte of a PCX file should always equal this magic number.
 constexpr uint8_t  PCX_HEADER_SIZE         = 128;   // Size in bytes of the PCX file header
@@ -87,7 +90,7 @@ auto static inline getImageDimensions(const PCXHeader header) -> std::pair<int, 
     return std::make_pair(width, height);
 }
 
-auto PCXParser::loadPCX(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<PCXImage> {
+auto PCXParser::loadPCX(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<Texture> {
     std::ifstream file(pakPath, std::ios::binary);
 
     if (!file.is_open()) {
@@ -142,6 +145,6 @@ auto PCXParser::loadPCX(const std::string &pakPath, const PakFileEntry &entry) -
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    return PCXImage{width, height, textureID, ""}; // Initialize filename field
+    return Texture{width, height, textureID, ""}; // Initialize filename field
 }
 

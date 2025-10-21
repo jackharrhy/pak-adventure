@@ -40,6 +40,8 @@ target_link_libraries(imgui PUBLIC glfw)
 add_executable(PakViewer
     main.cpp
     src/pcxparser.cpp
+    src/pakparser.cpp
+    src/walparser.cpp
 )
 target_include_directories(PakViewer PRIVATE 
     ${CMAKE_SOURCE_DIR}/src
