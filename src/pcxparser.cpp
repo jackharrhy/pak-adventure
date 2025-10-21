@@ -10,7 +10,7 @@ constexpr uint8_t  PCX_MAGIC_NUMBER        = 0x0A;  // The first byte of a PCX f
 constexpr uint8_t  PCX_HEADER_SIZE         = 128;   // Size in bytes of the PCX file header
 constexpr uint16_t PALETTE_SIZE_256        = 768;   // The size in bytes of the 256 color palette (appended to the end of the file)
 constexpr uint8_t  PALETTE_SIZE_EGA        = 48;    // The size in bytes of the 16-color EGA palette
-constexpr uint8_t  PALETTE_256_MARKER_BYTE = 0x0C;  // Byte marker that indicates the start of a 256 color palette, which immediately precedes the palette data will
+constexpr uint8_t  PALETTE_256_MARKER_BYTE = 0x0C;  // Byte marker that indicates the start of a 256 color palette, which immediately precedes the palette data
 
 auto readHeader(std::ifstream &file) -> std::optional<PCXHeader> {
     // TODO: We should be checking the magic number and validating it's correct
