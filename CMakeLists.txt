@@ -37,8 +37,14 @@ target_include_directories(tinyfiledialogs PUBLIC
 # Link GLFW with ImGui
 target_link_libraries(imgui PUBLIC glfw)
 
-add_executable(PakViewer main.cpp)
+add_executable(PakViewer
+    main.cpp
+    src/pcxparser.cpp
+    src/pakparser.cpp
+    src/walparser.cpp
+)
 target_include_directories(PakViewer PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/third_party/libzip/lib
     ${CMAKE_SOURCE_DIR}/third_party/stb
 )

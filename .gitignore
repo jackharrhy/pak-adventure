@@ -1,3 +1,7 @@
 build
 builddir
 dist
+.cache
+
+# Ignore this(?)
+imgui.ini
