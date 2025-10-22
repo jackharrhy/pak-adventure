@@ -1,13 +1,16 @@
 cmake_minimum_required(VERSION 3.10)
 project(PakViewer)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 find_package(glfw3 REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(ZLIB REQUIRED)
 
 # Add libzip from submodule
 add_subdirectory(third_party/libzip)
+
+# Add spdlog from submodule
+add_subdirectory(third_party/spdlog)
 
 # Add ImGui library
 add_library(imgui
@@ -38,14 +41,20 @@ target_include_directories(tinyfiledialogs PUBLIC
 target_link_libraries(imgui PUBLIC glfw)
 
 add_executable(PakViewer
-    main.cpp
-    src/pcxparser.cpp
-    src/pakparser.cpp
-    src/walparser.cpp
+    src/main.cpp
+    src/parser/pcx.cpp
+    src/parser/pak.cpp
+    src/parser/pkzip.cpp
+    src/parser/wal.cpp
+    src/parser/text.cpp
+    src/parser/binary.cpp
+    src/parser/registry.cpp
+    src/parser/stb.cpp
 )
 target_include_directories(PakViewer PRIVATE 
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/parser
     ${CMAKE_SOURCE_DIR}/third_party/libzip/lib
     ${CMAKE_SOURCE_DIR}/third_party/stb
 )
-target_link_libraries(PakViewer glfw OpenGL::GL ZLIB::ZLIB zip imgui tinyfiledialogs)
+target_link_libraries(PakViewer glfw OpenGL::GL ZLIB::ZLIB zip imgui tinyfiledialogs spdlog::spdlog_header_only)

@@ -1,5 +1,4 @@
 #define GL_SILENCE_DEPRECATION
-#define STB_IMAGE_IMPLEMENTATION
 
 #include <algorithm>
 #include <imgui.h>
@@ -16,15 +15,20 @@
 #include <tinyfiledialogs.h>
 #include <zip.h>
 #include <iostream>
-#include <stb_image.h>
 #include <unordered_map>
 #include <limits>
 #include <misc/cpp/imgui_stdlib.h>
+#include <spdlog/spdlog.h>
 
 #include "types.h"
-#include "pakparser.h"
-#include "pcxparser.h"
-#include "walparser.h"
+#include "texture.h"
+#include "parser/pak.h"
+#include "parser/pcx.h"
+#include "parser/wal.h"
+#include "parser/text.h"
+#include "parser/binary.h"
+#include "parser/registry.h"
+#include "parser/stb.h"
 
 struct FileTreeNode
 {
@@ -32,158 +36,6 @@ struct FileTreeNode
     std::vector<FileTreeNode> children;
     std::optional<PakFileEntry> entry;
 };
-
-struct TextFile
-{
-    std::string contents;
-};
-
-struct BinaryFile
-{
-    std::vector<uint8_t> data;
-};
-
-namespace ParserRegistry
-{
-    using LoadArchiveFunc = std::optional<std::vector<PakFileEntry>> (*)(const std::string &);
-    using ReadDataFunc = std::vector<uint8_t> (*)(const std::string &, const PakFileEntry &);
-
-    struct FormatHandlers
-    {
-        LoadArchiveFunc loadArchive;
-        ReadDataFunc readData;
-        std::string description;
-    };
-
-    extern std::unordered_map<PakFormat, FormatHandlers> handlers;
-
-    PakFormat getFormatFromExtension(const std::string &extension)
-    {
-        if (extension == ".pak")
-            return PakFormat::PAK;
-        if (extension == ".pk3" || extension == ".pk4")
-            return PakFormat::PKZIP;
-        return PakFormat::UNKNOWN;
-    }
-}
-
-namespace PKZipParser
-{
-    auto loadArchive(const std::string &path) -> std::optional<std::vector<PakFileEntry>>
-    {
-        int error;
-        zip_t *archive = zip_open(path.c_str(), 0, &error);
-        if (!archive)
-            return std::nullopt;
-
-        std::vector<PakFileEntry> entries;
-        zip_int64_t num_entries = zip_get_num_entries(archive, 0);
-
-        for (zip_int64_t i = 0; i < num_entries; i++)
-        {
-            struct zip_stat st;
-            if (zip_stat_index(archive, i, 0, &st) == -1)
-                continue;
-
-            // Skip directories
-            if (st.name[strlen(st.name) - 1] == '/')
-                continue;
-
-            PakFileEntry entry;
-            entry.filename = st.name;
-            entry.size = st.size;
-            entry.format = PakFormat::PKZIP;
-            entry.zipFile = nullptr; // Will be set when file is opened
-            entries.push_back(entry);
-        }
-
-        return entries;
-    }
-
-    auto readData(const std::string &path, const PakFileEntry &entry) -> std::vector<uint8_t>
-    {
-        int error;
-        zip_t *archive = zip_open(path.c_str(), 0, &error);
-        if (!archive)
-            return {};
-
-        zip_file_t *file = zip_fopen(archive, entry.filename.c_str(), 0);
-        if (!file)
-        {
-            zip_close(archive);
-            return {};
-        }
-
-        std::vector<uint8_t> data(entry.size);
-        zip_fread(file, data.data(), entry.size);
-        zip_fclose(file);
-        zip_close(archive);
-
-        return data;
-    }
-}
-
-namespace TextFileParser
-{
-    auto loadTextFile(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<TextFile>
-    {
-        auto readDataFunc = ParserRegistry::handlers[entry.format].readData;
-        auto data = readDataFunc(pakPath, entry);
-
-        if (data.empty())
-            return std::nullopt;
-
-        return TextFile{std::string(data.begin(), data.end())};
-    }
-}
-
-namespace BinaryFileParser
-{
-    auto loadBinaryFile(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<BinaryFile>
-    {
-        auto readDataFunc = ParserRegistry::handlers[entry.format].readData;
-        auto data = readDataFunc(pakPath, entry);
-
-        if (data.empty())
-            return std::nullopt;
-
-        return BinaryFile{data};
-    }
-}
-
-namespace STBImageParser
-{
-    auto loadSTBImage(const std::string &pakPath, const PakFileEntry &entry) -> std::optional<Texture>
-    {
-        auto readDataFunc = ParserRegistry::handlers[entry.format].readData;
-        auto data = readDataFunc(pakPath, entry);
-
-        if (data.empty())
-            return std::nullopt;
-
-        int width, height, channels;
-        unsigned char *imageData = stbi_load_from_memory(data.data(), data.size(), &width, &height, &channels, STBI_rgb_alpha);
-        if (!imageData)
-            return std::nullopt;
-
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        stbi_image_free(imageData);
-        return Texture{width, height, textureID, ""};
-    }
-}
-
-namespace ParserRegistry
-{
-    std::unordered_map<PakFormat, FormatHandlers> handlers = {
-        {PakFormat::PAK, {&PakParser::loadArchive, &PakParser::readData, "Quake/Quake 2 PAK Format"}},
-        {PakFormat::PKZIP, {&PKZipParser::loadArchive, &PKZipParser::readData, "ZIP-based Format (PK3/PK4)"}}};
-}
 
 struct PakViewerState
 {
@@ -208,7 +60,7 @@ struct PakViewerState
 void setStatusMessage(PakViewerState &state, const std::string &message)
 {
     state.statusMessage = message;
-    std::cout << "Status: " << message << std::endl;
+    spdlog::info("Status: {}", message);
 }
 
 void buildFileTree(const std::vector<PakFileEntry> &entries, FileTreeNode &root)
@@ -568,8 +420,8 @@ std::string openFileDialog()
     if (file)
     {
         std::string path(file);
-        std::cout << "Selected file: " << path << std::endl;
-        std::cout << "Extension: " << std::filesystem::path(path).extension().string() << std::endl;
+        spdlog::info("Selected file: {}", path);
+        spdlog::info("Extension: {}", std::filesystem::path(path).extension().string());
         return path;
     }
     return "";
@@ -605,11 +457,15 @@ auto renderUI(PakViewerState &state) -> void
                 if (format != PakFormat::UNKNOWN)
                 {
                     auto loadFunc = ParserRegistry::handlers[format].loadArchive;
-                    auto newEntries = loadFunc(selectedFile);
+                    auto newEntriesResult = loadFunc(selectedFile);
 
-                    if (newEntries)
+                    if (!newEntriesResult.has_value())
                     {
-                        state.entries = *newEntries;
+                        setStatusMessage(state, "Failed to load archive");
+                    }
+                    else
+                    {
+                        state.entries = std::move(newEntriesResult.value());
                         state.pakPath = selectedFile;
                         state.currentImage = std::nullopt;
                         state.selectedEntry = -1;
@@ -617,10 +473,6 @@ auto renderUI(PakViewerState &state) -> void
                         state.searchFilter = ""; // Clear search filter when loading a new file
                         state.loadedImages.clear();
                         setStatusMessage(state, "File loaded successfully");
-                    }
-                    else
-                    {
-                        setStatusMessage(state, "Unknown file type");
                     }
                 }
             }

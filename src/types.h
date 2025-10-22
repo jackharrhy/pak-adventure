@@ -11,17 +11,14 @@ enum class PakFormat {
     UNKNOWN
 };
 
+/**
+ * @brief Describes a file inside any type of PAK archive
+ */
 struct PakFileEntry {
+    /** The internal filename given to a file inside a PAK archive **/
     std::string filename;
     uint32_t offset;
     uint32_t size;
     PakFormat format;
     zip_file_t *zipFile;
-};
-
-struct Texture {
-    int width;
-    int height;
-    GLuint textureID;
-    std::string filename;
 };

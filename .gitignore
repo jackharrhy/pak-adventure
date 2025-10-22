@@ -4,4 +4,8 @@ dist
 .cache
 
 # Ignore this(?)
-imgui.ini
+*/*imgui.ini
+
+# For now don't track the html Doxygen output 
+# until we decide what we want to do with it
+docs 

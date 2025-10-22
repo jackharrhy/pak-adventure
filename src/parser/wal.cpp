@@ -6,14 +6,15 @@
 
 #include <GLFW/glfw3.h>
 
-#include "types.h"
-#include "walparser.h"
-#include "pakparser.h"
-#include "pcxparser.h"
+#include "../types.h"
+#include "../texture.h"
+#include "wal.h"
+#include "pak.h"
+#include "pcx.h"
 
 static std::optional<std::vector<uint8_t>> globalPalette;
 
-auto loadGlobalPalette(const std::string &pakPath, const std::vector<PakFileEntry> &entries) -> bool {
+static auto loadGlobalPalette(const std::string &pakPath, const std::vector<PakFileEntry> &entries) -> bool {
     // Find the colormap.pcx entry
     auto it = std::find_if(entries.begin(), entries.end(), [](const PakFileEntry &e) { return e.filename == "pics/colormap.pcx"; });
 
@@ -120,4 +121,3 @@ auto WALParser::loadWAL(const std::string &pakPath, const PakFileEntry &entry) -
 
     return Texture{static_cast<int>(header->width), static_cast<int>(header->height), textureID, ""};
 }
-
